@@ -408,33 +408,43 @@ start_children([], NChildren, _SupName) ->
 
 do_start_child(SupName, Child) ->
     #child{mfargs = {M, F, Args}} = Child,
-    case catch apply(M, F, Args) of
-        {ok, Pid} when is_pid(Pid) ->
-            NChild = Child#child{pid = Pid},
-            report_progress(NChild, SupName),
-            {ok, Pid};
-        {ok, Pid, Extra} when is_pid(Pid) ->
-            NChild = Child#child{pid = Pid},
-            report_progress(NChild, SupName),
-            {ok, Pid, Extra};
-        ignore ->
-            {ok, undefined};
-        {error, What} -> {error, What};
-        What -> {error, What}
+    try
+        case apply(M, F, Args) of
+            {ok, Pid} when is_pid(Pid) ->
+                NChild = Child#child{pid = Pid},
+                report_progress(NChild, SupName),
+                {ok, Pid};
+            {ok, Pid, Extra} when is_pid(Pid) ->
+                NChild = Child#child{pid = Pid},
+                report_progress(NChild, SupName),
+                {ok, Pid, Extra};
+            ignore ->
+                {ok, undefined};
+            {error, What} -> {error, What};
+            What -> {error, What}
+        end
+    catch
+      error:Exception:_ ->
+        {error, Exception}
     end.
 
 do_start_child_i(M, F, A) ->
-    case catch apply(M, F, A) of
-        {ok, Pid} when is_pid(Pid) ->
-            {ok, Pid};
-        {ok, Pid, Extra} when is_pid(Pid) ->
-            {ok, Pid, Extra};
-        ignore ->
-            {ok, undefined};
-        {error, Error} ->
-            {error, Error};
-        What ->
-            {error, What}
+    try
+        case apply(M, F, A) of
+            {ok, Pid} when is_pid(Pid) ->
+                {ok, Pid};
+            {ok, Pid, Extra} when is_pid(Pid) ->
+                {ok, Pid, Extra};
+            ignore ->
+                {ok, undefined};
+            {error, Error} ->
+                {error, Error};
+            What ->
+                {error, What}
+        end
+    catch
+        error:Exception:_ ->
+            {error, Exception}
     end.
 
 %%% ---------------------------------------------------
@@ -754,16 +764,21 @@ terminate(_Reason, State) ->
 code_change(_, State, _) ->
     case (State#state.module):init(State#state.args) of
         {ok, {SupFlags, StartSpec}} ->
-            case catch check_flags(SupFlags) of
-                ok ->
-                    {Strategy, MaxIntensity, Period} = SupFlags,
-                    update_childspec(State#state{strategy = Strategy,
-                                                 intensity = MaxIntensity,
-                                                 period = Period},
-                                     StartSpec);
-                Error ->
-                    {error, Error}
-            end;
+			try 
+				case check_flags(SupFlags) of
+					ok ->
+						{Strategy, MaxIntensity, Period} = SupFlags,
+						update_childspec(State#state{strategy = Strategy,
+													intensity = MaxIntensity,
+													period = Period},
+										StartSpec);
+					Error ->
+						{error, Error}
+				end
+			catch
+        		error:Exception:_ ->
+            		{error, Exception}
+			end;
         ignore ->
             {ok, State};
         Error ->
@@ -1419,14 +1434,19 @@ remove_child(Child, State) ->
 %% Returns: {ok, state()} | Error
 %%-----------------------------------------------------------------
 do_init(SupName, Type, StartSpec, Mod, Args) ->
-    case catch init_state(SupName, Type, Mod, Args) of
-        {ok, State} when ?is_simple(State) ->
-            init_dynamic(State, StartSpec);
-        {ok, State} ->
-            init_children(State, StartSpec);
-        Error ->
-            {stop, {supervisor_data, Error}}
-    end.
+	try
+		case init_state(SupName, Type, Mod, Args) of
+			{ok, State} when ?is_simple(State) ->
+				init_dynamic(State, StartSpec);
+			{ok, State} ->
+				init_children(State, StartSpec);
+			Error ->
+				{stop, {supervisor_data, Error}}
+		end
+	catch
+        error:Exception:_ ->
+            {error, Exception}
+	end.
 
 init_state(SupName, {Strategy, MaxIntensity, Period}, Mod, Args) ->
     valid_strategy(Strategy),
@@ -1489,7 +1509,12 @@ check_startspec([], Res) ->
     {ok, lists:reverse(Res)}.
 
 check_childspec({Name, Func, RestartType, Shutdown, ChildType, Mods}) ->
-    catch check_childspec(Name, Func, RestartType, Shutdown, ChildType, Mods);
+    try
+		check_childspec(Name, Func, RestartType, Shutdown, ChildType, Mods)
+	catch
+    	error:Exception:_ ->
+            {error, Exception}
+	end;
 check_childspec(X) -> {invalid_child_spec, X}.
 
 check_childspec(Name, Func, RestartType, Shutdown, ChildType, Mods) ->
